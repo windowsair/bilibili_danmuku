@@ -10,11 +10,19 @@ add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
 function(copy_lib)
     if (WIN32)
-        file(COPY
-                ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
-                ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
-                ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
-                DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+#        file(COPY
+#                ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
+#                ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
+#                ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
+#                DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+        install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/
+                DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
+                FILES_MATCHING PATTERN "*.dll" )
+
+        install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/
+                DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
+                FILES_MATCHING PATTERN "*.dll" )
     endif ()
 endfunction(copy_lib)
 
@@ -160,15 +168,36 @@ install(TARGETS live_render
         DESTINATION ${CMAKE_BINARY_DIR}/bin)
 
 if (WIN32)
-    install(FILES ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
-            ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
-            ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
-            CONFIGURATIONS Debug
-            DESTINATION ${CMAKE_BINARY_DIR}/bin)
+#    install(FILES ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
+#            ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
+#            ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
+#            CONFIGURATIONS Debug
+#            DESTINATION ${CMAKE_BINARY_DIR}/bin)
+#
+#    install(FILES ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
+#            ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
+#            ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
+#            CONFIGURATIONS Release
+#            DESTINATION ${CMAKE_BINARY_DIR}/bin)
 
-    install(FILES ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libcrypto-1_1-x64.dll
-            ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/libssl-1_1-x64.dll
-            ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/ass.dll
+    install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/
+            CONFIGURATIONS Debug
+            DESTINATION ${CMAKE_BINARY_DIR}/bin
+            FILES_MATCHING PATTERN "*.dll" )
+
+    install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/
+            CONFIGURATIONS Debug
+            DESTINATION ${CMAKE_BINARY_DIR}/bin
+            FILES_MATCHING PATTERN "*.dll" )
+
+    install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/openssl/x64-windows/bin/
             CONFIGURATIONS Release
-            DESTINATION ${CMAKE_BINARY_DIR}/bin)
+            DESTINATION ${CMAKE_BINARY_DIR}/bin
+            FILES_MATCHING PATTERN "*.dll" )
+
+    install(DIRECTORY ${DANMAKU_THIRDPARTY_PATH}/libass/x64-windows/
+            CONFIGURATIONS Release
+            DESTINATION ${CMAKE_BINARY_DIR}/bin
+            FILES_MATCHING PATTERN "*.dll" )
+
 endif ()
