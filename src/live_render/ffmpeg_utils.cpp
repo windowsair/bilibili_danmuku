@@ -16,6 +16,7 @@
 #if defined(_WIN32) || defined(_WIN64)
 #include "windows.h"
 
+// TODO: remove this?
 #define POPEN  _popen
 #define PCLOSE _pclose
 const char *kOpenOption = "wb";
@@ -163,7 +164,7 @@ inline bool is_valid_file_name(const std::string &filename) {
     RE2 re_posix(R"(\A[^/]*\z)");
     assert(re_posix.ok());
 
-    if (RE2::PartialMatch(filename, re_device_name)) {
+    if (RE2::PartialMatch(filename, re_posix)) {
         return true;
     }
 
@@ -252,6 +253,21 @@ inline std::string get_output_file_path(config::live_render_config_t &config) {
 #endif
 }
 
+inline std::string get_ffmpeg_file_path(const config::live_render_config_t &config) {
+    std::string full_name = fmt::format("{}/ffmpeg", config.ffmpeg_path_);
+
+#if defined(_WIN32) || defined(_WIN64)
+
+    // covert to local codepage
+    std::string cov_name = str2local_codepage(full_name);
+    assert(!cov_name.empty());
+    return cov_name;
+
+#else
+    return full_name;
+#endif
+}
+
 /**
  *
  * @param stream_address
@@ -264,10 +280,32 @@ inline bool ffmpeg_get_stream_meta_info(const std::string stream_address,
     std::string buffer;
     buffer.resize(10240);
 
-    auto cmd = fmt::format("{}/ffmpeg -i \"{}\" 2>&1", config.ffmpeg_path_,
-                           stream_address); // stderr > stdout
+    std::string ffmpeg_exe_path = get_ffmpeg_file_path(config);
 
-    FILE *fp = POPEN(cmd.c_str(), kOpenReadOption);
+    std::vector<const char *> ffmpeg_cmd_line{
+        ffmpeg_exe_path.c_str(),
+
+        "-referer",
+        "https://live.bilibili.com/",
+        "-user_agent",
+        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36",
+
+        "-i",
+        stream_address.c_str(),
+        nullptr,
+    };
+
+    subprocess_s subprocess;
+    int ret = subprocess_create(ffmpeg_cmd_line.data(),
+                                subprocess_option_inherit_environment, &subprocess);
+
+    if (ret != 0) {
+        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic,
+                   "内部错误：无法执行ffmpeg\n");
+        std::abort();
+    }
+
+    FILE *fp = subprocess_stderr(&subprocess);
     if (fp == NULL) {
         fmt::print(fg(fmt::color::red) | fmt::emphasis::italic,
                    "内部错误：无法打开ffmpeg\n");
@@ -300,7 +338,7 @@ inline bool ffmpeg_get_stream_meta_info(const std::string stream_address,
         }
     }
 
-    PCLOSE(fp);
+    subprocess_destroy(&subprocess);
 
     if (displayWidth == -1 && displayHeight == -1 && fps == -1) {
         return false;
@@ -323,14 +361,15 @@ inline bool ffmpeg_get_stream_meta_info(const std::string stream_address,
     return true;
 }
 
-void init_stream_video_info(const std::vector<live_stream_info_t> &stream_list,
+bool init_stream_video_info(const std::vector<live_stream_info_t> &stream_list,
                             config::live_render_config_t &config) {
 
     std::vector<live_stream_info_t> h264_stream_list;
 
     if (stream_list.empty()) {
-        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic, "无法获取直播地址\n");
-        std::abort(); // retry?
+        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic,
+                   "无法获取直播流地址，重试\n");
+        return false;
     }
 
     for (auto &item : stream_list) {
@@ -342,21 +381,24 @@ void init_stream_video_info(const std::vector<live_stream_info_t> &stream_list,
     }
 
     if (stream_list.empty()) {
-        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic, "无法获取FLV流\n");
-        std::abort(); // TODO: retry?
+        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic, "无法获取FLV流，重试\n");
+        return false;
     }
 
     bool flag = false;
     for (auto &item : h264_stream_list) {
         if (ffmpeg_get_stream_meta_info(item.address_, config)) {
             flag = true;
+            break;
         }
     }
 
     if (!flag) {
-        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic, "无法与直播流建立连接\n");
-        std::abort(); // TODO: retry
+        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic,
+                   "无法与直播流建立连接，重试\n");
     }
+
+    return flag;
 }
 
 /**
@@ -370,7 +412,7 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
                             config::live_render_config_t &config) {
     using namespace fmt::literals;
 
-    std::string ffmpeg_exe_path = config.ffmpeg_path_ + "/ffmpeg";
+    std::string ffmpeg_exe_path = get_ffmpeg_file_path(config);
     std::string output_file_path = get_output_file_path(config);
 
     std::string ffmpeg_video_info =
@@ -379,7 +421,10 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
     std::string ffmpeg_fps_info = fmt::format("{}", config.fps_);
 
     std::string ffmpeg_segment_time = fmt::format("{}", config.segment_time_);
-    std::string ffmpeg_thread_queue_size = fmt::format("{}", config.thread_queue_size_);
+    std::string ffmpeg_thread_queue_size = fmt::format("{}", config.ffmpeg_thread_queue_size_);
+    std::string render_thread_queue_size = fmt::format("{}", config.render_thread_queue_size_);
+
+    bool ffmpeg_copy_audio = std::string("copy") == config.audio_bitrate_;
     // cmd line
 
     // TODO: reconnect?
@@ -388,16 +433,16 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
     std::vector<const char *> ffmpeg_cmd_line{
         ffmpeg_exe_path.c_str(),
         "-y",
-        "-headers",
-        "Content-Type: application/x-www-form-urlencoded\r\nUser-Agent: Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/87.0.4280.141 Safari/537.36\r\n",
+
+        "-referer",
+        "https://live.bilibili.com/",
+        "-user_agent",
+        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36",
+
         "-fflags",
         "+discardcorrupt",
-        "-vsync",
-        "0",
-        "-analyzeduration",
-        "60",
+        "-vsync", "passthrough", // forces ffmpeg to extract frames as-is instead of trying to match a framerate
+        "-analyzeduration", "60",
     };
 
 
@@ -410,12 +455,33 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
                 //"0",
             });
     }
+    // clang-format on
+    std::string ffmpeg_overlay_filter_str;
+
+    // FFmpeg improved the calculation of premultiplied alpha for YUV format.
+    // Now we don't have to make extra pixel format conversion anymore.
+    // See: https://git.ffmpeg.org/gitweb/ffmpeg.git/commit/bdf01a9
+
+    if (config.font_alpha_fix_) {
+        // quality first
+        ffmpeg_overlay_filter_str =
+            "[0:v][1:v]overlay=x=0:y=0:alpha=premultiplied:format=rgb[v]";
+    } else {
+        // default option (speed first)
+        // For the newer ffmpeg, this actually performs better.
+        ffmpeg_overlay_filter_str =
+            "[0:v][1:v]overlay=x=0:y=0:alpha=premultiplied:format=yuv420[v]";
+    }
+
+    // clang-format off
 
     ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
             "-thread_queue_size",
             ffmpeg_thread_queue_size.c_str(),
             "-i",
             config.stream_address_.c_str(),
+            "-thread_queue_size",
+            render_thread_queue_size.c_str(),
             "-f",
             "rawvideo",
             "-s",
@@ -423,18 +489,35 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
             "-pix_fmt",
             "rgba",
             "-r",
+            //"-framerate",
             ffmpeg_fps_info.c_str(),
             "-i",
             "-",
             "-filter_complex",
-            "[0:v][1:v]overlay=0:0[v]",
-            "-map",
-            "[v]",
-            "-map",
-            "0:a",
+            ffmpeg_overlay_filter_str.c_str(),
+            //"[0:v][1:v]overlay=eof_action=endall[v]",
+            "-map", "[v]",
+            "-map", "0:a",
+    });
+
+    if (ffmpeg_copy_audio) {
+        ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
+            "-c:a", "copy",
+        });
+    }
+
+    // set video encoder
+    ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
             "-c:v:0",
             config.encoder_.c_str(),
     });
+
+    // old version FFmpeg alpha fix
+    if (config.font_alpha_fix_) {
+        ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
+            "-pix_fmt", "nv12",
+        });
+    }
 
     // clang-format on
 
@@ -446,14 +529,19 @@ void init_ffmpeg_subprocess(struct subprocess_s *subprocess,
     }
 
     // clang-format off
-
+    
     // set bitrate
     ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
             "-b:v:0",
             config.video_bitrate_.c_str(),
-            "-b:a:0",
-            config.audio_bitrate_.c_str(),
     });
+
+    if (!ffmpeg_copy_audio) {
+        ffmpeg_cmd_line.insert(ffmpeg_cmd_line.end(),{
+                "-b:a:0",
+                config.audio_bitrate_.c_str(),
+        });
+    }
 
     // set segment time
     if (config.segment_time_ > 0) {

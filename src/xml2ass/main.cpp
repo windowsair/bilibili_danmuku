@@ -9,10 +9,27 @@
 #include "ass_danmaku.h"
 #include "file_helper.h"
 
+#include "git.h"
+
 #include "thirdparty/fmt/include/fmt/color.h"
 #include "thirdparty/fmt/include/fmt/core.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#include "windows.h"
+#endif
+
 int main(int argc, char **argv) {
+
+#if defined(_WIN32) || defined(_WIN64)
+    // use utf8 codepage
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
+    fmt::print(fg(fmt::color::yellow),
+               "xml2ass version {}, https://github.com/windowsair/bilibili_danmaku\n\n",
+               GitMetadata::Describe());
+
     // get config
     auto user_config = config::get_user_ass_config();
 
@@ -20,6 +37,13 @@ int main(int argc, char **argv) {
         fmt::print(fg(fmt::color::yellow) | fmt::emphasis::italic,
                    "用法: xml2ass <input_file>\n"
                    "例如: xml2ass 1.xml 2.xml\n");
+        return -1;
+    }
+
+    if (user_config.use_custom_style_ &&
+        !ass::is_custom_ass_file_exist("custom_style.ass")) {
+        fmt::print(fg(fmt::color::red) | fmt::emphasis::italic,
+                   "已启用自定义样式，但custom_style.ass文件不存在\n");
         return -1;
     }
 

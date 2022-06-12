@@ -1,9 +1,12 @@
 ﻿#ifndef BILIBILI_DANMAKU_LIVE_DANMAKU_H
 #define BILIBILI_DANMAKU_LIVE_DANMAKU_H
 
+#include <condition_variable>
+#include <mutex>
 #include <vector>
 
 #include "danmaku.h"
+#include "live_render_config.h"
 
 #include "thirdparty/IXWebSocket/ixwebsocket/IXNetSystem.h"
 #include "thirdparty/IXWebSocket/ixwebsocket/IXUserAgent.h"
@@ -15,7 +18,7 @@
 #pragma pack(push, 1)
 typedef struct {
     uint32_t packet_len;
-    uint8_t magic[4]; // don't know...
+    uint8_t magic[4]; // don't know... maybe header_len?
     uint32_t com_1;
     uint32_t com_2;
 } live_danmaku_req_header_t;
@@ -59,7 +62,7 @@ typedef struct live_stream_video_info {
 } live_stream_video_info_t;
 
 typedef struct live_detail {
-    int code_; // TODO: remove this
+    int code_; // 0: OK, -1: Req failed
     enum live_status_enum { VALID = 1, INVALID };
     int live_status_;
     int room_id_;
@@ -71,7 +74,9 @@ typedef struct live_detail {
 
 class live_danmaku {
   public:
-    live_danmaku() : base_time_(0), is_pos_danmaku_process_(false) {
+    live_danmaku()
+        : base_time_(0), danmaku_recv_count_(0), is_pos_danmaku_process_(false),
+          do_not_print_danmaku_info_(false), is_live_start_(false) {
         zlib_handle_ = libdeflate_alloc_decompressor();
         zlib_buffer_.resize(10240);
 
@@ -79,6 +84,7 @@ class live_danmaku {
         parse_helper_.danmaku_type_re_ = nullptr;
         parse_helper_.danmaku_color_re_ = nullptr;
         parse_helper_.danmaku_info_re_ = nullptr;
+        parse_helper_.danmaku_vertical_cr_re_ = nullptr;
 
         ix::initNetSystem();
     }
@@ -88,7 +94,18 @@ class live_danmaku {
         delete parse_helper_.danmaku_type_re_;
         delete parse_helper_.danmaku_color_re_;
         delete parse_helper_.danmaku_info_re_;
+        delete parse_helper_.danmaku_vertical_cr_re_;
+
+        for (auto item : blacklist_regex_) {
+            delete item;
+        }
     }
+
+  public:
+    std::mutex live_start_mutex_;
+    std::condition_variable live_start_cv_;
+
+  public:
     live_detail_t get_room_detail(uint64_t live_id);
 
     std::vector<live_stream_info_t> get_live_room_stream(uint64_t room_id, int qn);
@@ -97,7 +114,21 @@ class live_danmaku {
 
     std::string get_username(uint64_t user_uid);
 
+    void init_blacklist();
+
     void run(std::string room_info);
+
+    bool is_live_start() const {
+        return is_live_start_;
+    }
+
+    void set_live_start_status(bool is_live_start) {
+        is_live_start_ = is_live_start;
+    }
+
+    void update_base_time(uint64_t base_time_in_ms) {
+        base_time_ = base_time_in_ms;
+    }
 
     void set_danmaku_queue(
         moodycamel::ReaderWriterQueue<std::vector<danmaku::danmaku_item_t>> *p) {
@@ -110,6 +141,18 @@ class live_danmaku {
 
     void disable_pos_danmaku_process() {
         is_pos_danmaku_process_ = false;
+    }
+
+    void enable_danmaku_stat_info() {
+        do_not_print_danmaku_info_ = false;
+    }
+
+    void disable_danmaku_stat_info() {
+        do_not_print_danmaku_info_ = true;
+    }
+
+    void set_vertical_danmaku_process_strategy(int strategy_num) {
+        vertical_danmaku_process_strategy_ = strategy_num;
     }
 
   private:
@@ -133,6 +176,21 @@ class live_danmaku {
      */
     void process_danmaku_list(std::vector<std::string> &raw_danmaku);
 
+    /**
+     * Customize danmaku item.
+     *
+     * @param color
+     * @param danmaku_origin_type
+     * @param danmaku_player_type
+     * @param timestamp
+     * @param start_time
+     * @param content
+     * @return true:This danmaku is acceptable. false: This danmaku should be dropped.
+     */
+    bool danmaku_item_pre_process(int &color, int &danmaku_origin_type,
+                                  int &danmaku_player_type, uint64_t &timestamp,
+                                  float &start_time, std::string &content);
+
   private:
     struct libdeflate_decompressor *zlib_handle_;
     std::vector<char> zlib_buffer_;
@@ -142,10 +200,21 @@ class live_danmaku {
         RE2 *danmaku_type_re_;
         RE2 *danmaku_color_re_;
         RE2 *danmaku_info_re_;
+        //
+        RE2 *danmaku_vertical_cr_re_;
     } parse_helper_;
     uint64_t base_time_;
     moodycamel::ReaderWriterQueue<std::vector<danmaku::danmaku_item_t>> *danmaku_queue_;
+    int danmaku_recv_count_;
+    int vertical_danmaku_process_strategy_; // config::verticalProcessEnum
     bool is_pos_danmaku_process_;
+    bool do_not_print_danmaku_info_;
+
+    // live status
+    bool is_live_start_;
+
+    bool is_blacklist_used_;
+    std::vector<RE2 *>blacklist_regex_;
 };
 
 #endif //BILIBILI_DANMAKU_LIVE_DANMAKU_H

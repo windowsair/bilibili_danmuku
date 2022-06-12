@@ -3,6 +3,9 @@ name: Build Binary
 on:
   push:
     branches: [ master, dev, ci_test ]
+    paths-ignore:
+      - '**/README.md'
+      - 'assets/**'
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc..)
@@ -33,6 +36,11 @@ jobs:
       shell: bash
       run: brew install openssl@1.1 && ls /usr/local/opt/openssl && ls /usr/local/opt/
 
+    - name: Install dependency(Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      shell: bash
+      run: sudo apt update && sudo apt install --no-install-recommends libssl-dev libfontconfig-dev libfreetype-dev libfribidi-dev libharfbuzz-dev
+
 
     - name: Configure CMake
       # Use a bash shell so we can use the same syntax for environment variable
@@ -42,7 +50,7 @@ jobs:
       # Note the current convention is to use the -S and -B options here to specify source
       # and build directories, but this is only available with CMake 3.13 and higher.
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
+      run: cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON -DLIVE_RENDER_BUILD_TESTING=OFF
 
     - name: Build
       working-directory: ${{github.workspace}}/build

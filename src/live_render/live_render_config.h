@@ -5,6 +5,18 @@
 
 namespace config {
 
+enum systemVerboseMaskEnum {
+    NO_FFMPEG = 1,
+    NO_DANMAKU = 2,
+    NO_STAT_INFO = 4,
+};
+
+enum verticalProcessEnum {
+    DEFAULT = 0,
+    DROP = 1,
+    CONVERT = 2,
+};
+
 typedef struct live_render_config_ : public ass_config_t {
     // ffmpeg setting
     std::string ffmpeg_path_;
@@ -19,8 +31,18 @@ typedef struct live_render_config_ : public ass_config_t {
     std::string encoder_;
     std::vector<std::string> extra_encoder_info_;
     uint64_t segment_time_;
-    int thread_queue_size_;
 
+    // ffmpeg setting
+    int ffmpeg_thread_queue_size_;
+    int render_thread_queue_size_;
+
+    bool font_alpha_fix_;
+
+    int danmaku_lead_time_compensation_;
+
+    // system setting
+    int verbose_;
+    int vertical_danmaku_strategy_;
 
     // stream setting
     std::string filename_;
