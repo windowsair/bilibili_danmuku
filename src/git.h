@@ -32,4 +32,4 @@ class GitMetadata {
     static std::string Branch();
 };
 
-#endif //BILIBILI_DANMAKU_GIT_H
+#endif //BILIBILI_DANMAKU_GIT_H 
