@@ -2,7 +2,7 @@ name: Build Binary
 
 on:
   push:
-    branches: [ master, dev, ci_test ]
+    branches: [ master, dev, ci_test,regression_1 ]
     paths-ignore:
       - '**/README.md'
       - 'assets/**'
