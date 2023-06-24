@@ -2,7 +2,7 @@ name: Build Binary
 
 on:
   push:
-    branches: [ master, dev, ci_test ]
+    branches: [ master, dev, ci_test, simdutf-update ]
     paths-ignore:
       - '**/README.md'
       - 'assets/**'
